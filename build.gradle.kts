@@ -1,6 +1,37 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
+    `maven-publish`
+}
+
+group = "com.netonstream"
+version = providers.gradleProperty("adapterVersion").getOrElse("1.0.0-beta25")
+val netonVersion = providers.gradleProperty("netonVersion").getOrElse("1.0.0-beta25")
+
+repositories {
+    providers.gradleProperty("neton.repository").orNull?.let { path ->
+        exclusiveContent {
+            forRepository { maven { url = uri(path) } }
+            filter { includeModuleByRegex("com[.]netonstream", "neton-.*") }
+        }
+    }
+}
+
+kotlin {
+    @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+    abiValidation { keepLocallyUnsupportedTargets.set(false) }
+    if (org.gradle.internal.os.OperatingSystem.current().isMacOsX) {
+        val sdk = providers.exec { commandLine("xcrun", "--sdk", "macosx", "--show-sdk-path") }
+            .standardOutput.asText.get().trim()
+        targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
+            if (konanTarget.family.isAppleFamily) binaries.all { linkerOpts("-L$sdk/usr/lib/swift") }
+        }
+    }
+}
+
+publishing { repositories { maven { name = "stagingLocal"; url = uri(layout.buildDirectory.dir("staging-repo")) } } }
+tasks.withType<org.gradle.api.publish.maven.tasks.AbstractPublishToMaven>().configureEach {
+    doFirst { require(providers.gradleProperty("neton.local").orNull != "true") { "Publish only against packaged Neton dependencies" } }
 }
 
 repositories {
@@ -42,9 +73,9 @@ kotlin {
 
         commonMain {
             dependencies {
-                api(project(":neton-http"))
-                api(project(":neton-core"))
-                implementation(project(":neton-logging"))
+                api("com.netonstream:neton-http:$netonVersion")
+                api("com.netonstream:neton-core:$netonVersion")
+                implementation("com.netonstream:neton-logging:$netonVersion")
                 implementation(libs.ktor.io)
                 implementation(libs.ktor.http.cio)
                 implementation(libs.ktor.server.core)
